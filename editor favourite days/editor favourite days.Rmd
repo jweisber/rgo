@@ -130,4 +130,4 @@ Well, it's a theory. Clearly, more research is needed. In a future post I'll dig
 
 # Technical Notes
 
-This post was written in R Markdown and the source is [available on GitHub](https://www.github.com/jweisber/rgo). I'm new to both R and classical statistics, and this post is a learning exercise for me. So I encourage you to check the code and contact me with corrections.
+This post was written in R Markdown and the source is [available on GitHub](https://github.com/jweisber/rgo/blob/master/editor%20favourite%20days/editor%20favourite%20days.Rmd). I'm new to both R and classical statistics, and this post is a learning exercise for me. So I encourage you to check the code and contact me with corrections.
