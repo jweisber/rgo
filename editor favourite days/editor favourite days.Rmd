@@ -1,0 +1,133 @@
+---
+title: "An Editor's Favourite Days of the Week"
+css: ../custom.css
+output:
+  html_document:
+    keep_md: true
+---
+
+
+```{r include=FALSE}
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+source('../rgo_functions.R') # load_table function
+```
+
+
+Finding willing referees is one of the biggest challenges for a journal editor. Are referees more willing some days of the week than others? Apparently they are, on Mondays... and Thursdays, for some reason. At least, that's how things have gone at [*Ergo*](http://ergophiljournal.org/) the last couple years (2015 and 2016).
+
+
+# Data
+
+Consider the "bounce rate" for a given day of the week: the portion of invites sent on that day that end up being declined (*bounce rate = #declined / #invited*).
+
+Editors prefer a lower bounce rate. And, on average over the last two years, the lowest bounce rates at *Ergo* were on Monday and Thursday:
+
+```{r echo=F}
+r <- load_table("referee_assignments") %>%
+  filter(!is.na(agreed))  %>%
+  mutate(Year = as.character(year(with_tz(as.POSIXct(assigned_at), "EST")))) %>%
+  mutate(Weekday = wday(with_tz(as.POSIXct(assigned_at), "EST")))
+
+r.rates <- r %>%
+  group_by(Weekday) %>%
+  summarize(`Bounce rate` = sum(agreed == 0) / n())
+
+ggplot(r.rates) +
+  geom_freqpoly(stat="identity", aes(Weekday, `Bounce rate`)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+
+It's an odd pattern... maybe it's not a pattern at all? To check, let's look at 2015 and 2016 separately:
+
+```{r echo=F}
+r.rates2 <- r %>%
+  group_by(Year, Weekday) %>%
+  summarize(`Bounce rate` = sum(agreed == 0) / n())
+
+ggplot(r.rates2) +
+  geom_freqpoly(stat="identity", aes(Weekday, `Bounce rate`, colour = Year)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+
+tbl <- r %>%
+  filter(!is.na(agreed))  %>%
+  mutate(Weekday = wday(with_tz(as.POSIXct(assigned_at), "EST"))) %>%
+  select(agreed, Weekday) %>%
+  table()
+test <- chisq.test(tbl)
+
+tbl2 <- r %>%
+  filter(!is.na(agreed))  %>%
+  mutate(Weekday = wday(with_tz(as.POSIXct(assigned_at), "EST"))) %>%
+  mutate(MTh = ifelse(Weekday == 2 | Weekday == 5, T, F)) %>%
+  select(agreed, MTh) %>%
+  table()
+test2 <- chisq.test(tbl2)
+```
+
+It sure looks like the same pattern each year.[^0]
+
+[^0]: Except for Saturdays where the 2015 data is sparse, at only 32 invites. Just 6 referees would have had to respond differently to Saturday-invites in 2015 to eliminate the difference from 2016.
+
+```{r echo=F}
+mon.rate <- (r.rates %>% filter(Weekday == 2))$`Bounce rate` %>%
+  round(2)
+thu.rate <- (r.rates %>% filter(Weekday == 5))$`Bounce rate` %>%
+  round(2)
+tue.rate <- (r.rates %>% filter(Weekday == 3))$`Bounce rate` %>%
+  round(2)
+```
+
+Moreover, going back to the overall data from the first graph, there's pretty significant fluctuation: from a minimum of `r thu.rate` on Thursdays to a maximum of `r tue.rate` on Tuesdays/Fridays/Saturdays, a difference of `r tue.rate - thu.rate`. That would be a lot of fluctuation if it were just random noise. Given how large the sample is (`r sum(tbl)` invitations in all), it seems pretty safe to say this is a real thing.[^1]
+
+[^1]: For the statistically inclined, if the null hypothesis is that a referee's response is independent of the day of the week of the invite, then: $\chi^2(`r test$parameter`, N = `r sum(tbl)`) = `r round(test$statistic, 2)`$, $p = `r round(test$p.value, 3)`$. If instead the null hypothesis is that a referee's response is independent of whether or not the day of the invite is a Monday or Thursday, then: $\chi^2(`r test2$parameter`, N = `r sum(tbl2)`) = `r round(test2$statistic, 2)`$, $p = `r round(test2$p.value, 4)`$.
+
+```{r echo=F}
+tbl <- r %>%
+  filter(!is.na(agreed))  %>%
+  mutate(Weekday = wday(with_tz(as.POSIXct(assigned_at), "EST"))) %>%
+  filter(Weekday == 2 | Weekday == 5) %>%
+  select(agreed, Weekday) %>%
+  table()
+test <- chisq.test(tbl)
+```
+What about the difference between Mondays and Thursdays---is that significant or just noise? Well, it may not look trivial, but it's not statistically significant according to the standard test for such things.[^2] As for the other days of the week, they're generally even closer together, and the same test suggests there's nothing significant in the variation there, either.[^3]
+
+[^2]: $\chi^2(`r test$parameter`, N = `r sum(tbl)`) = `r round(test$statistic, 2)`$, $p = `r round(test$p.value, 3)`$.
+
+```{r echo=F}
+tbl <- r %>%
+  filter(!is.na(agreed))  %>%
+  mutate(Weekday = wday(with_tz(as.POSIXct(assigned_at), "EST"))) %>%
+  filter(Weekday != 2 & Weekday != 5) %>%
+  select(agreed, Weekday) %>%
+  table()
+test <- chisq.test(tbl)
+```
+
+[^3]: $\chi^2(`r test$parameter`, N = `r sum(tbl)`) = `r round(test$statistic, 2)`$, $p = `r round(test$p.value, 3)`$.
+
+Apparently, the most we can say is that Mondays and Thursdays stand out from the rest of the week.
+
+
+# Theory
+
+So what's the explanation?
+
+Monday I get. It's the only day of the week that immediately follows the weekend (except on long weekends, obviously). So Mondays are when we're most recovered from the burnout of the previous week. They're when we're full of expectations and plans for the coming week, and most deceived about how productive and unbusy Thursday and Friday will be.
+
+But Thursdays are more puzzling. Why would they be special? A colleague suggested false optimism about free time as an explanation. "That makes sense for Mondays," I thought, "but not Thursdays".
+
+Maybe it does make sense after all, though. Thursday is the closest you can get to the end of the week without being a Friday. And Fridays are basically the weekend, right? So maybe Thursday is late enough in the week that it seems there's a whole work-week ahead to fill (like Monday but with even more [temporal discounting](https://en.wikipedia.org/wiki/Temporal_discounting)). Whereas Fridays, well, dammit! That's basically the weekend already. And you just agreed to a bunch of referee work yesterday!
+
+
+# Future Research
+
+Well, it's a theory. Clearly, more research is needed. In a future post I'll dig into the data some more to look for possible explanations.
+
+
+# Technical Notes
+
+This post was written in R Markdown and the source is [available on GitHub](https://www.github.com/jweisber/rgo). I'm new to both R and classical statistics, and this post is a learning exercise for me. So I encourage you to check the code and contact me with corrections.
