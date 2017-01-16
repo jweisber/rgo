@@ -1,0 +1,161 @@
+---
+title: "The Thursday Conundrum"
+css: ../custom.css
+output:
+  html_document:
+    keep_md: true
+---
+
+```{r include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+source('../rgo_functions.R') # load_table function
+```
+
+In an earlier post we saw that Mondays and Thursdays are good for editors, at least at [*Ergo*](http://www.ergophiljournal.org/). Potential referees say yes more often when invited on these days. But why?
+
+Mondays aren't too puzzling. It's the start of a new week, so people are fresh, and maybe just a little deluded about how productive the coming week will prove to be.
+
+But Thursdays? They don't seem especially special. I tried [speculating *a priori*](http://jonathanweisberg.org/post/An%20Editors%20Favourite%20Days/#theory) about what might be going on there. But it'd be nice to have a hypothesis that's grounded in some data.
+
+
+# Virtual Mondays?
+
+At first I thought it might be something subtle. Maybe the day the invite is sent isn't as important as when the referee *responds*. An invitation sent on Thursday might not be answered until the following Monday. Whereas invites sent on Monday might tend to be answered the same day. Then Thursday would end up being a kind of virtual Monday, as far as referees responding to invites goes.
+
+That didn't seem to fit the data, though. For one thing, if you look at which days referees are least likely to *respond* negatively, it's Mondays and Thursdays again:
+```{r echo=F}
+r <- load_table("referee_assignments") %>%
+  filter(!is.na(agreed))  %>%
+  mutate(Year = as.character(year(with_tz(as.POSIXct(assigned_at), "EST")))) %>%
+  mutate(`Day Invited` = wday(with_tz(as.POSIXct(assigned_at), "EST"))) %>%
+  mutate(responded_at = ifelse(!is.na(agreed_at), agreed_at,
+                          ifelse(!is.na(declined_at), declined_at, NA))) %>%
+  mutate(`Day Responded` = wday(with_tz(as.POSIXct(responded_at), "EST")))
+
+r %>% group_by(`Day Responded`) %>%
+  summarize(`Bounce Rate` = sum(agreed == 0) / n()) %>%
+  ggplot() +
+  geom_freqpoly(stat="identity", aes(`Day Responded`, `Bounce Rate`)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+
+For another, if you look at when referees respond to requests sent on Monday, it's the same pattern as for requests sent on Thursday. In either case, referees typically respond the same day, or in the next couple of days. Here's the pattern for Monday-invites:
+```{r echo=F}
+r %>%
+  filter(`Day Invited` == 2) %>%
+  group_by(`Day Responded`) %>%
+  ggplot() +
+  geom_bar(aes(`Day Responded`)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+And here are Thursday-invites:
+```{r echo=F}
+r %>%
+  filter(`Day Invited` == 5) %>%
+  group_by(`Day Responded`) %>%
+  ggplot() +
+  geom_bar(aes(`Day Responded`)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+In case you're curious, here are all the days of the week, tiled according to day-of-invite:
+```{r echo=F}
+r %>%
+  mutate(`Day Invited Alpha` =
+           factor(
+             recode(r$`Day Invited`, 
+                    `1` = "Sunday", `2` = "Monday", `3` = "Tuesday",
+                    `4` = "Wednesday", `5` = "Thursday", `6` = "Friday", 
+                    `7` = "Saturday")
+            , levels = c("Sunday",  "Monday", "Tuesday", "Wednesday", "Thursday",
+                         "Friday", "Saturday")
+          )) %>%
+  group_by(`Day Responded`) %>%
+  ggplot() +
+  facet_wrap(~ `Day Invited Alpha`) +
+  geom_bar(aes(`Day Responded`)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+The pattern is pretty similar regardless of the day the invite is sent (except for the predictable effect of weekends, which tend to dampen responses accross the board).
+
+
+# The Beleaguered
+
+So my current hypothesis is much more flat-footed: it's mainly a matter of when referees are busy. Monday they're feeling fresh from the weekend, as I suggested. But why would Thursday be less overwhelming for referees? Maybe because they get fewer invitations then.
+
+Let's test that hypothesis. Here are the total numbers of invites sent out each day of the week, over the last two years at *Ergo*:
+```{r echo=F}
+r <- load_table("referee_assignments") %>%
+  filter(!is.na(agreed))  %>%
+  mutate(Year = as.character(year(with_tz(as.POSIXct(assigned_at), "EST")))) %>%
+  mutate(`Day Invited` = wday(with_tz(as.POSIXct(assigned_at), "EST"))) %>%
+  mutate(responded_at = ifelse(!is.na(agreed_at), agreed_at,
+                          ifelse(!is.na(declined_at), declined_at, NA))) %>%
+  mutate(`Day Responded` = wday(with_tz(as.POSIXct(responded_at), "EST")))
+
+r %>% group_by(`Day Invited`) %>%
+  summarize(`Invites Sent` = n()) %>%
+  ggplot() +
+  geom_freqpoly(stat="identity", aes(`Day Invited`, `Invites Sent`)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+The overall pattern is pretty much what you'd expect. Weekends are quiet (because even editors have lives). Then things pick up on Monday and Tuesday as the workweek begins, before declining again as the week wears on.
+
+Note the uptick from Thursday to Friday, though: a difference of about 30 invitations. On a scale ranging from ~100 to ~250, that may be a non-trivial difference. And the same pattern shows up in both years we have data for:
+```{r echo=F}
+r %>% group_by(Year, `Day Invited`) %>%
+  summarize(`Invites Sent` = n()) %>%
+  ggplot() +
+  geom_freqpoly(stat="identity", aes(`Day Invited`, `Invites Sent`, colour=Year)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+So maybe Thursdays are good because things are quieting down as the weekend approaches, and referees are receiving fewer requests. But by Friday it's too late. The editors of the world are scrambling to lock down referees before the weekend. And, probably, referees aren't keen to clutter up their desks just as they're about to go into a weekend break.
+
+
+# How is a Raven Like a Writing Desk?
+
+But if Thursdays are good because fewer requests go out then, shouldn't Mondays be terrible? We just saw that the start of the week is the busiest time as far as number of requests sent to referees.
+
+My guess is that Monday and Thursday are to be explained somewhat differently. Thursdays are distinguished by their quietude, whereas Mondays are marked by vim and vigour. People are fresh, as I said. But also, the onslaught of the week's workload hasn't really hit yet.
+
+In support of this last hypothesis, notice that the following pattern is quite robust: weekends are quiet, followed by a burst of activity early in the week, followed by decline towards the next weekend. We saw this pattern with editors sending requests to referees. But we see it other places too.
+
+For example, here's how the quantity of submissions the journal receives varies over the week:
+```{r echo=F}
+load_table("submissions") %>%
+  filter(withdrawn == 0)  %>%
+  mutate(`Day of the Week` = wday(with_tz(as.POSIXct(created_at), "EST"))) %>%
+  group_by(`Day of the Week`) %>%
+  summarize(`Submissions Received` = n()) %>%
+  ggplot() +
+  geom_freqpoly(stat="identity", aes(`Day of the Week`, `Submissions Received`)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+And here are the numbers of referee reports completed each day:
+```{r echo=F}
+r %>% filter(!is.na(report_completed_at)) %>%
+  mutate(`Day of the Week` = wday(with_tz(as.POSIXct(report_completed_at), "EST"))) %>%
+  group_by(`Day of the Week`) %>%
+  summarize(`Reports Completed` = n()) %>%
+  ggplot() +
+  geom_freqpoly(stat="identity", aes(`Day of the Week`, `Reports Completed`)) +
+  scale_x_continuous(breaks=1:7, labels=week.abb)
+```
+Pretty clearly, authors, editors, and referees are all quietest on the weekends, and most active at the week's start. (We also see in this last graph, as  with editors contacting referees, that there's a feeble resurgence toward week's end---presumably in an attempt to clear the docket before the weekend.)
+
+
+# Conclusion
+
+So here's my theory, at least for now.
+
+Referees are game on Mondays for the obvious reasons: they've had the weekend to recharge and catch up, and the onslaught of Monday's and Tuesday's new submissions---and the corresponding wave of invitations to referees---hasn't reverberated out into the referee-verse just yet. (Not to mention other demands, like teaching.)
+
+Referees are game on Thursdays, too, but for somewhat different reasons. As the week wears on, authors and editors wind down, so referees find fewer invites in their inboxes. They've also completed their existing assignments earlier in the week, maybe even  submitted their own papers. So they're game, until the next day, Friday, when editors do their last-minute, pre-weekend scramble---which is especially ill-timed since referees are switching out of work-mode anyway.
+
+It's a bit unlovely and disunified, this explanation. But not entirely. Mondays and Thursdays do have something in common on this story. They're both days when things are calmer for referees, albeit calm in different ways and for somewhat different reasons.
+
+
+# Technical Notes
+
+This post was written in R Markdown and the source is [available on GitHub](https://github.com/jweisber/rgo/blob/master/the%20thursday%20conundrum/the%20thursday%20conundrum.Rmd). I'm new to R and data science, and this post is a learning exercise for me. So I encourage you to check the code and contact me with corrections.
