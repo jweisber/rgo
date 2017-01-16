@@ -13,7 +13,7 @@ library(lubridate)
 source('../rgo_functions.R') # load_table function
 ```
 
-In an earlier post we saw that Mondays and Thursdays are good for editors, at least at [*Ergo*](http://www.ergophiljournal.org/). Potential referees say yes more often when invited on these days. But why?
+In [an earlier post](/post/An%20Editors%20Favourite%20Days/) we saw that Mondays and Thursdays are good for editors, at least at [*Ergo*](http://www.ergophiljournal.org/). Potential referees say yes more often when invited on these days. But why?
 
 Mondays aren't too puzzling. It's the start of a new week, so people are fresh, and maybe just a little deluded about how productive the coming week will prove to be.
 
@@ -64,9 +64,9 @@ In case you're curious, here are all the days of the week, tiled according to da
 r %>%
   mutate(`Day Invited Alpha` =
            factor(
-             recode(r$`Day Invited`, 
+             recode(r$`Day Invited`,
                     `1` = "Sunday", `2` = "Monday", `3` = "Tuesday",
-                    `4` = "Wednesday", `5` = "Thursday", `6` = "Friday", 
+                    `4` = "Wednesday", `5` = "Thursday", `6` = "Friday",
                     `7` = "Saturday")
             , levels = c("Sunday",  "Monday", "Tuesday", "Wednesday", "Thursday",
                          "Friday", "Saturday")
