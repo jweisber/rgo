@@ -1,0 +1,377 @@
+---
+title: "Gender & Journal Submissions"
+css: ../custom.css
+output:
+  html_document:
+    keep_md: true
+---
+
+```{r include=FALSE}
+library(knitr)
+library(pwr)
+library(DescTools)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+source('../rgo_functions.R') # load_table function
+source('../yuenbt.R') # yuenbt function (by Rand R. Wilcox)
+```
+
+Does an author's gender affect the fate of their submission to an academic journal? It's a big question, even if we restrict ourselves to philosophy journals. 
+
+But we can make a start by using [*Ergo*](http://www.ergophiljournal.org) as one data-point. I'll examine two questions:
+
+- Question 1: Does gender affect the decision rendered at *Ergo*? Are men more likely to have their papers accepted, for example?
+
+- Question 2: Does gender affect time-to-decision at *Ergo*? For example, do women have to wait longer on average for a decision?
+
+```{r include=FALSE}
+s <- load_table("submissions") %>%
+       select(id, user_id, created_at, decision, decision_entered_at, 
+         revision_number, decision_approved)
+u <- load_table("users") %>%
+       select(id, gender)
+s.all <- left_join(s, u, by = c("user_id" = "id"))
+s.completed <- filter(s.all, decision_approved == 1)
+s <- na.omit(s.completed)
+```
+
+
+# Background
+
+Some important background and caveats before we begin:
+
+- Our data set goes back to Feb. 11, 2015, when *Ergo* moved to its current online system for handling submissions. We do have records going back to Jun. 2013, when the journal launched. But integrating the data from the two systems is a programming hassle I haven't faced up to yet.
+
+- We'll exclude submissions that were withdrawn by the author before a decision could be rendered. Usually, when an author withdraws a submission, it's so that they can resubmit a trivially-corrected manuscript five minutes later. So this data mostly just gets in the way.
+
+- We'll also exclude submissions that were still under review as of Jan. 1, 2017, since the data there is incomplete.
+
+- The gender data we'll be using was gathered manually by *Ergo*'s managing editors (me and Franz Huber). In most cases we didn't know the author personally. So we did a quick google to see whether we could infer the author's gender based on public information, like pronouns and/or pictures. When we weren't confident that we could, we left their gender as "unknown".
+
+- This analysis covers only men and women, because there haven't yet been any cases where we could confidently infer that an author identified as another gender. And the "gender unknown" cases are too few for reliable statistical analysis.
+
+- Since we only have data for the gender of the submitting author, our analysis will overlook co-authors.
+
+With that in mind, a brief overview: our data set contains $`r nrow(s.all)`$ submissions over almost two years (Feb. 11, 2015 up to Jan. 1, 2017), but only $`r nrow(s)`$ of these are included in this analysis. The $`r nrow(s.all) - nrow(s.completed)`$ submissions that were in-progress as of Jan. 1, 2017, or were withdrawn by the author, have been excluded. Another $`r nrow(s.completed) - nrow(s)`$ cases where the author's gender was unknown were also excluded.
+
+
+# Gender & Decisions
+
+Does an author's gender affect the journal's decision about whether their submission is accepted? We can slice this question a few different ways:
+
+1. Does gender affect the first-round decision to reject/accept/R&R?
+
+2. Does gender affect the likelihood of desk-rejection, specifically?
+
+3. Does gender affect the chance of converting an R&R into an accept?
+
+4. Does gender affect the ultimate decision to accept/reject (whether via an intervening R&R or not)?
+
+The short answer to all these questions is: no, at least not in a statistically significant way. But there are some wrinkles. So let's take each question in turn.
+
+
+## First-Round Decisions
+
+Does gender affect the first-round decision to reject/accept/R&R?
+
+*Ergo* has two kinds of R&R, Major Revisions and Minor Revisions. Here are the raw numbers:
+```{r echo=F, warning=F}
+s.round1 <- s %>%
+  filter(revision_number == 0)
+results <- s.round1 %>%
+  select(gender, decision) %>%
+      table()
+results <- results[, c("Reject", "Major Revisions", "Minor Revisions", "Accept")] # sort
+kable(results, format = 'markdown')
+test <- chisq.test(results)
+```
+
+Graphically, in terms of percentages:
+
+```{r echo=F}
+percents = (prop.table(t(results), 2) * 100) %>%
+  as.data.frame()
+ggplot(percents, aes(decision, Freq, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Decision") +
+  ylab("Frequency (%)") + 
+  guides(fill = guide_legend(title = "Gender"))
+```
+
+There are differences here, of course: women were asked to make major revisions more frequently than men, for example. And men received verdicts of minor revisions or outright acceptance more often than women.
+
+```{r include=F, warning=F}
+test <- chisq.test(results)
+p.value <- round(test$p.value, 2)
+N <- sum(results)
+statistic <- round(test$statistic, 2)
+
+pwr.w1 <- pwr.chisq.test(w = .1,
+                         N = sum(results), 
+                         df = prod(dim(results) - 1))$power %>%
+            round(2)
+pwr.w2 <- pwr.chisq.test(w = .2,
+                         N = sum(results), 
+                         df = prod(dim(results) - 1))$power %>%
+            round(2)
+```
+
+Are these differences significant? They don't look it from the bar graph. And a standard chi-square test agrees.[^1]
+
+[^1]: Specifically, $\chi^2(`r test$parameter`, N = `r N`) = `r statistic`$, $p = `r p.value`$. This raises the question of power, and for a small effect size ($w = .1$) power is only about $`r pwr.w1`$. But it increases quickly to $`r pwr.w2`$ at $w = .2$.
+
+```{r include=F, warning=F}
+G.p.value <- GTest(results)$p.value %>%
+               unname() %>%
+               round(2)
+
+Fisher.p.value <- fisher.test(results)$p.value %>%
+                    round(2)
+```
+
+    Given the small numbers in some of the columns though, especially the Accept column, we might prefer a different test than $\chi^2$. The more precise $G$ test yields $p = `r G.p.value`$, still fairly large. And Fisher's exact test yields $p = `r Fisher.p.value`$.
+
+```{r include=F, warning=F}
+dec.levels <- c('Reject', 'Major Revisions', 'Minor Revisions', 'Accept')
+dec.fac <- factor(s.round1$decision, levels = dec.levels, ordered = T)
+gen.fac <- factor(s.round1$gender, levels = c('Female', 'Male'), ordered = T)
+p.value <- msq.test(unclass(dec.fac), unclass(gen.fac)) %>%
+  round(2)
+```
+
+    We might also do an ordinal analysis, since decisions have a natural desirability ordering for authors: Accept > Minor Revisions > Major Revisions > Reject. We can test for a linear trend by assigning integer ranks from 4 down through 1 [(Agresti 2007)](http://ca.wiley.com/WileyCDA/WileyTitle/productCd-0470463635.html).  A test of the [Mantel-Haenszel statistic](https://onlinecourses.science.psu.edu/stat504/node/91) $M^2$ then yields $p = `r p.value`$.
+
+
+## Desk-Rejections
+
+Things are a little more interesting if we separate out desk-rejections from rejections-after-external-review. The raw numbers:
+
+```{r echo=F}
+r.completed <- load_table("referee_assignments") %>%
+  filter(report_completed == TRUE)
+
+s.round1 <- s.round1 %>%
+  mutate(decision2 = ifelse(
+    decision == 'Reject' & id %in% r.completed$submission_id, 'Non-desk Reject', decision
+  )) %>%
+    mutate(decision2 = ifelse(decision2 == 'Reject', 'Desk Reject', decision2))
+
+results <- table( select(s.round1, gender, decision2) ) 
+results <- results[, c("Desk Reject", "Non-desk Reject", "Major Revisions", "Minor Revisions", "Accept")] # sort
+kable(results, format = 'markdown')
+```
+
+In terms of percentages for men and women:
+
+```{r echo=FALSE}
+percents <- (prop.table(t(results), 2) * 100) %>% 
+  as.data.frame()
+ggplot(data = percents, aes(decision2, Freq, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Decision") +
+  ylab("Frequency (%)") + 
+  guides(fill=guide_legend(title="Gender"))
+```
+
+The differences here are more pronounced. For example, women had their submissions desk-rejected more frequently, a difference of about 8.5%.
+
+But once again, the differences are not statistically significant according to the standard chi-square test.[^2]
+
+```{r include=F, warning=F}
+test <- chisq.test(results)
+p.value <- round(test$p.value, 2)
+N <- sum(results)
+statistic <- round(test$statistic, 2)
+
+pwr.w1 <- pwr.chisq.test(w = .1,
+                         N = sum(results), 
+                         df = prod(dim(results) - 1))$power %>%
+            round(2)
+pwr.w2 <- pwr.chisq.test(w = .2,
+                         N = sum(results), 
+                         df = prod(dim(results) - 1))$power %>%
+            round(2)
+
+G.p.value <- GTest(results)$p.value %>%
+               unname() %>%
+               round(2)
+Fisher.p.value <- fisher.test(results)$p.value %>%
+                    round(2)
+```
+
+[^2]: Here we have $\chi^2(`r test$parameter`, N = `r N`) = `r statistic`$, $p = `r p.value`$. As before, the power for a small effect ($w = .1$) is only middling, about `r pwr.w1`, but increases quickly to near certainty ($`r pwr.w2`$) by $w = .2$.
+
+    Instead of $\chi^2$ we might again consider a $G$ test, which yields $p = `r G.p.value`$, or Fisher's exact test which yields $p = `r Fisher.p.value`$.
+
+```{r include=FALSE}
+dec.levels <- c('Desk Reject', 'Non-desk Reject', 'Major Revisions', 'Minor Revisions', 'Accept')
+dec.fac <- factor(s.round1$decision2, levels = dec.levels, ordered = T)
+gen.fac <- factor(s.round1$gender, levels = c('Female', 'Male'), ordered = T)
+p.value <- msq.test(unclass(dec.fac), unclass(gen.fac)) %>%
+             round(2)
+```
+
+    For an ordinal test using the ranking Desk Reject < Non-desk Reject < Major Revisions < etc., the Mantel-Haenszel statistic $M^2$ now yields $p = `r p.value`$.
+
+
+## Ultimate Decisions
+
+What if we just consider a submission's ultimate fate---whether it's accepted or rejected in the end? Here the results are pretty clear:
+
+```{r echo=F}
+results <- s %>%
+  filter(decision == 'Accept' | decision == 'Reject') %>%
+    select(gender, decision) %>%
+      table()
+results <- results[ , c("Reject", "Accept")] # sort
+kable(results, format = 'markdown')
+```
+
+```{r echo=FALSE}
+percents <- (prop.table(t(results), 2) * 100) %>% 
+  as.data.frame()
+ggplot(percents, aes(decision, Freq, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Decision") +
+  ylab("Frequency (%)") + 
+  guides(fill = guide_legend(title = "Gender"))
+```
+
+Pretty obviously there's no significant difference, and a chi-square test agrees.[^3]
+
+```{r include=F, warning=F}
+test <- chisq.test(results)
+parameter <- test$parameter
+N <- sum(results)
+statistic <- test$statistic %>% round(2)
+p.value <- test$p.value %>% round(2)
+```
+
+[^3]: Here we have $\chi^2(`r parameter`, N = `r N`) = `r statistic`$, $p = `r p.value`$.
+
+
+## Conversions
+
+Our analysis so far suggests that men and women probably have about equal chance of converting an R&R into an accept. Looking at the numbers directly corroborates that thought:
+
+```{r echo=F}
+results <- s %>%
+  filter(revision_number > 0) %>%
+    select(gender, decision) %>%
+      table()
+results <- results[, c("Reject", "Accept")]
+kable(results, format = 'markdown')
+```
+
+```{r echo=FALSE}
+percents <- (prop.table(t(results), 2) * 100) %>%
+  as.data.frame()
+ggplot(percents, aes(decision, Freq, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Decision") +
+  ylab("Frequency (%)") + 
+  guides(fill = guide_legend(title = "Gender"))
+```
+
+As before, a standard chi-square test agrees.[^4] Though, of course, the numbers here are small and shouldn't be given too much weight. 
+
+```{r include=F, warning=F}
+test <- chisq.test(results)
+parameter <- test$parameter
+N <- sum(results)
+statistic <- test$statistic %>% round(2)
+p.value <- test$p.value %>% round(2)
+```
+
+[^4]: $\chi^2(`r parameter`, N = `r N`) = `r statistic`$, $p = `r p.value`$.
+
+
+
+## Conclusion So Far
+
+None of the data so far yielded a significant difference between men and women. None even came particularly close (see the footnotes for the numerical details). So it seems the journal's decisions are independent of gender, or nearly so.
+
+
+# Gender & Time-to-Decision
+
+Authors don't just care what decision is rendered, of course. They also care that decisions are made quickly. Can men and women expect similar wait-times?
+
+```{r include=F}
+dtd = difftime(as.POSIXct(s$decision_entered_at),
+               as.POSIXct(s$created_at),
+               units = c("days")) %>% 
+                round(1) %>% as.numeric()
+
+s <- s %>% mutate(dtd = dtd)
+
+ext.rvw <- s$id %in% r.completed$submission_id
+women <- s$gender == 'Female'
+men <- s$gender == 'Male'
+
+test <- t.test(s %>% filter(gender == 'Male') %>% .$dtd,
+               s %>% filter(gender == 'Female') %>% .$dtd)
+parameter <- test$parameter %>% round(2)
+statistic <- test$statistic %>% round(2)
+p.value <- test$p.value %>% round(2)
+
+overall.mean <- s$dtd %>% mean() %>% round(1)
+m.mean <- test$estimate[1] %>% round(1)
+w.mean <- test$estimate[2] %>% round(1)
+
+wmw.p.value <- wilcox.test(s %>% filter(gender == 'Male') %>% .$dtd,
+                           s %>% filter(gender == 'Female') %>% .$dtd) %>%
+                            .$p.value %>%
+                            round(2)
+bt.p.value <- yuenbt(s %>% filter(gender == 'Male') %>% .$dtd,
+                     s %>% filter(gender == 'Female') %>% .$dtd, 
+                     tr = 0.0,
+                     side = TRUE) %>%
+                       .$p.value %>%
+                       round(2)
+```
+
+The average time-to-decision is `r overall.mean` days. But for men it's `r m.mean` days while for women it's only `r w.mean`. This looks like a significant difference. And although it isn't quite significant according to a standard $t$ test, it very nearly is.[^5]
+
+[^5]: Specifically, $t(`r parameter`) = `r statistic`$, $p = `r p.value`$. Although a $t$ test may not actually be the best choice here, since (as we're about to see) the sampling distributions aren't normal, but rather bimodal. Still, we can compare this result to non-parametric tests like Wilcoxon-Mann-Whitney ($p = `r wmw.p.value`$) or the bootstrap-$t$  ($p = `r bt.p.value`$). These $p$-values don't quite cross the customary $\alpha = .05$ threshold either, but they are still small.
+
+What might be going on here? Let's look at the observed distributions for men and women:
+
+```{r echo=FALSE}
+ggplot(s, aes(dtd, fill = gender)) +
+  facet_wrap(~gender, ncol = 2) +
+  geom_histogram(binwidth = 7) +
+  xlab("Days") + ylab("Submissions") + guides(fill = guide_legend(title = "Gender"))
+```
+
+A striking difference is that there are so many more submissions from men than from women. But otherwise these distributions actually look quite similar. Each is a bimodal distribution with one peak for desk-rejections around one week, and another, smaller peak for externally reviewed submissions around six or seven weeks.
+
+We noticed earlier that women had more desk-rejections by about 8.5%. And while that difference wasn't statistically significant, it may still be what's causing the almost-significant difference we see with time-to-decision (especially if men also have a few extra outliers, as seems to be the case).
+
+To test this hypothesis, we can separate out desk-rejections and externally reviewed submissions. Graphically:
+
+```{r echo=FALSE}
+ggplot(s[!ext.rvw, ], aes(dtd, fill = gender)) +
+  facet_wrap(~gender, ncol = 2) +
+  geom_histogram(binwidth = 2) +
+  xlab("Days") + ylab("Submissions") + guides(fill = guide_legend(title = "Gender")) +
+  labs(title = "Desk-rejections")
+
+ggplot(s[ext.rvw, ], aes(dtd, fill = gender)) +
+  facet_wrap(~gender, ncol = 2) +
+  geom_histogram(binwidth = 7) +
+  xlab("Days") + ylab("Submissions") + guides(fill = guide_legend(title = "Gender")) +
+  labs(title = "Externally Reviewed Submissions")
+```
+
+Aside from the raw numbers, the distributions for men and for women look very similar. And if we run separate $t$ tests for desk-rejections and for externally reviewed submissions, gender differences are no longer close to significance. For desk-rejections $p = `r round( t.test(s[men & !ext.rvw, ]$dtd, s[women & !ext.rvw, ]$dtd)$p.value, digits = 2)`$. And for externally reviewed submissions $p = `r round( t.test(s[men & ext.rvw, ]$dtd, s[women & ext.rvw, ]$dtd)$p.value, digits = 2)`$.
+
+
+# Conclusions
+
+Apparently an author's gender has little or no effect on the content or speed of *Ergo*'s decision. I'd *like* to think this is a result of the journal's [strong commitment to triple-anonymous review](http://www.ergophiljournal.org/review.html). But without data from other journals to make comparisons, we can't really infer much about potential causes. And, of course, we can't generalize to other journals with any confidence, either.
+
+
+# Technical Notes
+
+This post was written in R Markdown and the source is [available on GitHub](https://github.com/jweisber/rgo/blob/master/author%20gender/author%20gender.Rmd). I'm new to both R and classical statistics, and this post is a learning exercise for me. So I encourage you to check the code and contact me with corrections.
