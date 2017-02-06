@@ -143,9 +143,9 @@ p.value <- msq.test(unclass(dec.fac), unclass(gen.fac)) %>%
     We might also do an ordinal analysis, since decisions have a natural desirability ordering for authors: Accept > Minor Revisions > Major Revisions > Reject. We can test for a linear trend by assigning integer ranks from 4 down through 1 [(Agresti 2007)](http://ca.wiley.com/WileyCDA/WileyTitle/productCd-0470463635.html).  A test of the [Mantel-Haenszel statistic](https://onlinecourses.science.psu.edu/stat504/node/91) $M^2$ then yields $p = `r p.value`$.
 
 
-## Desk-Rejections
+## Desk Rejections
 
-Things are a little more interesting if we separate out desk-rejections from rejections-after-external-review. The raw numbers:
+Things are a little more interesting if we separate out desk rejections from rejections-after-external-review. The raw numbers:
 
 ```{r echo=F}
 r.completed <- load_table("referee_assignments") %>%

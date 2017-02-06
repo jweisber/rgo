@@ -1,0 +1,156 @@
+---
+title: "In Defense of Reviewer 2"
+css: ../custom.css
+output:
+  html_document:
+    keep_md: true
+---
+  
+```{r include=FALSE}
+library(knitr)
+library(dplyr)
+library(ggplot2)
+source('../rgo_functions.R')
+
+round1 <- load_table("submissions") %>%
+  filter(revision_number == 0) %>%
+  .$id
+
+r <- load_table("referee_assignments") %>%
+  filter(submission_id %in% round1)
+
+r <- r %>%
+  mutate(rec_rank = if_else(
+    recommend_reject == 1, 1, if_else(
+      recommend_major_revisions == 1, 2, if_else(
+        recommend_minor_revisions == 1, 3, if_else(
+          recommend_accept == 1, 4, 0)))))
+
+r <- r %>%
+  group_by(submission_id) %>%
+  arrange(created_at) %>%
+  mutate(invite_rank = row_number()) %>%
+  ungroup()
+
+r.complete <- r %>% 
+  filter(report_completed == 1) %>%
+  mutate(days_to_complete = difftime(report_completed_at,
+                                     created_at,
+                                     units = c("days")))
+```
+
+Spare a thought for Reviewer 2, that much-maligned shade of academe. There's even [a hashtag](https://twitter.com/hashtag/reviewer2) dedicated to the joke:
+
+<blockquote class="twitter-tweet tw-align-center" data-lang="en"><p lang="en" dir="ltr">A rare glimpse of reviewer 2, seen here in their natural habitat <a href="https://t.co/lpT1BVhDCX">pic.twitter.com/lpT1BVhDCX</a></p>&mdash; Aidan McGlynn (@AidanMcGlynn) <a href="https://twitter.com/AidanMcGlynn/status/820647829446283264">January 15, 2017</a></blockquote>
+<script async src="http://platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+But is it just a joke? Order could easily matter here.
+
+Referees invited later weren't the editor's first choice, after all. Maybe they're less competent, less likely to appreciate your brilliant insights as an author. Or maybe they're more likely to miss well-disguised flaws! Then we should expect Reviewer 2 to be the more *generous* one.
+
+Come to think of it, we can order referees in other ways beside order-of-invite. We might order them according to who completes their report fastest, for example. And faster referees might be more careless, hence more dismissive. Or they might be less critical and thus more generous.
+
+There's a lot to consider. Let's investigate, using [*Ergo*](http://www.ergophiljournal.org/)'s data as usual.
+
+
+# Severity & Generosity
+
+Reviewer 2 is accused of a lot. It's not just that their overall take is more severe; they also tend to miss the point. They're irresponsible and superficial in their reading. And to the extent they do appreciate the author's point, their objections are poorly thought out. What's more, if they bother to demand revisions, their demands are unreasonable.
+
+We can't measure these things directly, of course. But we can estimate a referee's generosity indirectly, using their recommendation to the editors as a proxy.
+
+*Ergo*'s referees choose from four possible recommendations: Reject, Major Revisions, Minor Revisions, and Accept. To estimate a referee's generosity, we'll assign these recommendations numerical ranks, from 1 (Reject) up through 4 (Accept).
+
+The higher this number, the more generous the referee; the lower, the more severe.
+
+
+# Invite Order
+
+Is there any connection between the order in which referees are invited and their severity?
+
+Usually an editor has to try a few people before they get two takers. So we can assign each potential referee an "invite rank". The first person asked has rank 1, the second person asked has rank 2, and so on.
+
+Is there a correlation between invite rank and severity?
+
+Here's a plot of invite rank (*x*-axis) and generosity (*y*-axis). (The points have non-integer heights because I've added some random  ["jitter"](http://r4ds.had.co.nz/data-visualisation.html#position-adjustments) to make them all visible. Otherwise you'd just see an uninformative grid.)
+
+```{r echo=F}
+ggplot(r.complete, aes(invite_rank, rec_rank)) +
+  geom_point(position = "jitter") + 
+  geom_smooth(method = "loess") +
+  xlab("Invite Rank") +
+  ylab("Generosity")
+```
+
+The blue curve shows the overall trend in the data.[^1] It's basically flat all the way through, except at the far-right end where the data is too sparse to be informative.
+
+[^1]: Specifically, the blue curve is a regression curve using the [LOESS](https://en.wikipedia.org/wiki/Local_regression#Definition_of_a_LOESS_model) method of fit.
+
+```{r include=F}
+result <- cor.test(r.complete$invite_rank,
+            r.complete$rec_rank,
+            method = "spearman",
+            exact = F)
+rs = result$estimate %>% round(2)
+p = result$p.value %>% round(2)
+```
+
+We can also look at the classic measure of correlation known as [Spearman's rho](https://en.wikipedia.org/wiki/Spearman's_rank_correlation_coefficient). The estimate is essentially 0 given our data ($r_s$ = `r rs`).[^2]
+
+[^2]: A significance test of the null hypothesis $\rho_s$ = 0 yields *p* = `r p`.
+
+Evidently, invite-rank has no discernible impact on severity.
+
+
+# Speed
+
+But now let's look at the speed with which a referee completes their report:
+
+```{r echo=F}
+result <- cor.test(as.numeric(r.complete$days_to_complete),
+            r.complete$rec_rank,
+            method = "spearman",
+            exact = F)
+rs = result$estimate %>% round(2)
+p = result$p.value %>% round(2)
+
+ggplot(r.complete, aes(as.numeric(days_to_complete), rec_rank)) +
+  geom_point(position = "jitter") + 
+  geom_smooth(method = "loess") +
+  xlab("Days to Complete Report") +
+  ylab("Generosity")
+```
+
+Here an upward trend is discernible. And our estimate of Spearman's rho agrees: $r_s$ = `r rs`, a small but non-trivial correlation.[^3]
+
+[^3]: Testing the null hypothesis $\rho_s$ = 0 yields *p* = `r p`.
+
+Apparently, referees who take longer tend to be more generous!
+
+
+# My Take
+
+I find these results encouraging, for the most part.
+
+It's nice to know that an editor's first choice for a referee is the same as their fifth, as far as how severe or generous they're likely to be.
+
+It's also nice to know that the speed with which a referee completes their report doesn't *hugely* inform heir severity.
+
+One we might well worry that faster referees are unduly severe. But this worry is tempered by a few considerations.
+
+For one thing, the effect we found is small enough that it could just be noise. It is detectable using tools like regression and significance testing, so it's not to be dismissed out of hand. But we might also do well to heed the wisdom of [XKCD](https://xkcd.com/1725/) here:
+
+![](https://imgs.xkcd.com/comics/linear_regression_2x.png)
+
+Even if the effect is real, though, it could be a good thing just as easily as a bad thing.
+
+True, referees who work fast might be sloppy and dismissive. And those who take longer might feel guiltier and thus be unduly generous. 
+
+But maybe referees who are more on the ball are both more prompt and more apt to spot a submission's flaws. Or (as my coeditor Franz Huber pointed out) manuscripts that should clearly be rejected might be easier to referee on average, hence faster.
+
+It's hard to know what to make of this effect, if it is an effect. Clearly, [#MoreResearchIsNeeded](https://twitter.com/hashtag/moreresearchisneeded).
+
+
+# Technical Notes
+
+This post was written in R Markdown and the source is [available on GitHub](https://github.com/jweisber/rgo/blob/master/reviewer%202/reviewer%202.Rmd). I'm new to both R and statistics, and this post is a learning exercise for me. So I encourage you to check the code and contact me with corrections.
