@@ -50,7 +50,7 @@ Referees invited later weren't the editor's first choice, after all. Maybe they'
 
 Come to think of it, we can order referees in other ways beside order-of-invite. We might order them according to who completes their report fastest, for example. And faster referees might be more careless, hence more dismissive. Or they might be less critical and thus more generous.
 
-There's a lot to consider. Let's investigate, using [*Ergo*](http://www.ergophiljournal.org/)'s data as usual.
+There's a lot to consider. Let's investigate, using [*Ergo*](http://www.ergophiljournal.org/)'s data [as usual](/tags/rgo/).
 
 
 # Severity & Generosity
