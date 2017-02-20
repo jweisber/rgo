@@ -1,0 +1,430 @@
+---
+title: "Gender & Journal Referees"
+css: ../custom.css
+output:
+  html_document:
+    keep_md: true
+--- 
+  
+```{r include=FALSE}
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(binom)
+source('../rgo_functions.R')
+```
+
+
+We looked at author gender in [a previous post](/post/Author Gender/), today let's consider referees. Does their gender have any predictive value?
+
+Once again our discussion only covers men and women because we don't have the data to support a deeper analysis.[^1]
+
+[^1]: Unlike in the previous analysis of author gender, however, here we do have a few known cases where either (i) the referee identifies as neither male nor female, or (ii) they identify as something more specific, e.g. "transgender male" rather than just "male". But these cases are still too few for statistical analysis.
+
+Questions we'll consider:
+
+1. *Requests*. How are requests to referee distributed between men and women? Are men more likely to be invited, for example?
+2. *Responses*. Does gender inform a referee's response to a request? Are women more likely to say 'yes', for example?
+3. *Response-speed*. Does gender inform how quickly a referee responds to an invitation (whether to agree or to decline)? Do men take longer to agree/decline an invitation, for example?
+4. *Completion-speed*. If a referee does agree to provide a report, does their gender inform how quickly they'll complete that report? Do men and women tend to complete their reports in the same time-frame?
+5. *Recommendations*. Does gender inform how positive/negative a referee's recommendation is? Are men and women equally likely to recommend that a submission be rejected, for example?
+6. *Influence*. Does a referee's gender affect the influence of their recommendation on the editor's decison? Are the recommendations of male referees more likely to be followed, for example?
+
+```{r include=FALSE}
+u <- load_table("users") %>%
+  select(id, gender)
+
+r <- load_table("referee_assignments") %>% 
+  left_join(u, by = c("user_id" = "id"))
+
+n.r <- nrow(r)
+
+round1 <- load_table("submissions") %>% filter(revision_number == 0) %>% .$id
+
+r <- r %>%
+  filter(submission_id %in% round1) %>% # exclude R&Rs
+  filter(!is.na(gender)) %>% # exclude no-data
+  filter(!(is.na(agreed_at) & is.na(declined_at) & canceled == 0)) %>% # exclude pending
+  filter(!(agreed == 1 & canceled == 0 & report_completed == 0)) # exclude in-progress
+
+n.r.included <- nrow(r)
+```
+
+A quick overview of our data set: there are a total of `r n.r` referee-requests in the database. But only `r n.r.included` are included in this analysis. I've excluded:
+
+1. Requests to review an invited resubmission, since these are a different sort of beast.
+2. Pending requests and reports, since the data for these are incomplete.
+3. A handfull of cases where the referee's gender is either unknown, or doesn't fit the male/female classification.
+
+
+# Requests
+
+```{r include=F}
+n.f <- r %>% filter(gender == "Female") %>% nrow()
+n.f.perc <- (100 * n.f / n.r.included) %>% round(1)
+n.m <- r %>% filter(gender == "Male") %>% nrow()
+n.m.perc <- 100 - n.f.perc
+```
+
+How are requests distributed between men and women? `r n.f` of our `r n.r.included` requests went to women, or `r n.f.perc`% (`r n.m` went to men, or `r n.m.perc`%).
+
+How does this compare to the way men and women are represented in academic philosophy in general? Different sources and different subpopulations yield a range of estimates.
+
+```{r include=F}
+s <- load_table("submissions") %>% 
+  left_join(u, by = c("user_id" = "id"))
+s.f <- s %>% filter(gender == "Female") %>% nrow()
+s.m <- s %>% filter(gender == "Male") %>% nrow()
+s.f.perc <- (100 * s.f / (s.f + s.m )) %>% round(1)
+
+int <- binom.confint(n.f, n.r.included, conf.level = 0.95, methods = "agresti-coull")
+```
+
+At the low end, we saw in [an earlier post](/post/Author Gender/) that about `r s.f.perc`% of *Ergo*'s submissions come from women. The PhilPapers survey yields a range from 16.2% ([all respondents](https://philpapers.org/surveys/demographics.pl)) to 18.4% (["target" faculty](https://philpapers.org/surveys/demographics.pl?affil=Target+faculty&survey=8)). And sources cited in [Schwitzgebel & Jennings](http://www.faculty.ucr.edu/~eschwitz/SchwitzPapers/WomenInPhil-160315b.pdf) estimate the percentage of women faculty in various English speaking countries at 23% for Australia, 24% for the U.K., and 19--26% for the U.S.
+
+So we have a range of baseline estimates from 15% to 26%. For comparison, the 95% confidence interval around our `r n.f.perc`% finding is (`r (100 * int$lower) %>% round(1)`%, `r (100 * int$upper) %>% round(1)`%).
+
+
+# Responses
+
+Do men and women differ in their responses to these requests? Here are the raw numbers:
+
+```{r echo=F}
+table <- r %>% 
+  mutate(response = if_else(agreed == 1, 
+                            "Agreed", 
+                            "Declined / No Response / Canceled", 
+                            "Declined / No Response / Canceled")) %>%
+  select(gender, response) %>%
+  table()
+kable(table, format = 'markdown')
+```
+
+The final column calls for some explanation. I'm lumping togther several scenarios here: (i) the referee responds to decline the request, (ii) the referee never responds, (iii) the editors cancel the request because it was made in error. Unfortunately, these three scenarios are hard to distinguish based on the raw data. For example, sometimes a referee declines by email rather than via our online system, and the handling editor then cancels the request instead of marking it as "Declined". 
+
+With that in mind, here are the proportions graphically:
+
+```{r echo=F}
+percents <- (prop.table(t(table), 2) * 100) %>%
+  as.data.frame()
+
+ggplot(percents, aes(response, Freq, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Response") +
+  ylab("Frequency (%)") + 
+  guides(fill = guide_legend(title = "Gender"))
+
+perc.m <- percents %>%
+  filter(response == "Agreed" & gender == "Male") %>%
+  .$Freq %>%
+  round()
+perc.f <- percents %>%
+  filter(response == "Agreed" & gender == "Female") %>%
+  .$Freq %>%
+  round()
+
+report <- chisq.test(table) %>% test.report(type = "chi.sq")
+```
+
+Men agreed more often than women: approximately `r perc.m`% vs. `r perc.f`%. And this difference is statistically significant.[^0]
+
+[^0]: `r report`.
+
+```{r echo=F}
+f.agreed <- table["Female", "Agreed"]
+total.agreed <- sum(table[, "Agreed"])
+f.agreed.perc <- (100 * f.agreed / total.agreed ) %>% round(1)
+
+int <- binom.confint(f.agreed, total.agreed, conf.level = 0.95, methods = "agresti-coull")
+```
+
+Note that women and men accounted for about `r f.agreed.perc`% and `r 100 - f.agreed.perc`% of the "Agreed" responses, respectively. Whether this figure differs significantly from the gender makeup of "the general population" depends, as before, on the source and subpopulation we use for that estimate. 
+
+We saw that estimates of female representation ranged from roughly 15% to 26%. For comparison, the 95% confidence interval around our `r f.agreed.perc`% finding is (`r (100 * int$lower) %>% round(1)`%, `r (100 * int$upper) %>% round(1)`%).
+
+
+# Response-speed
+
+Do men and women differ in response-speed---in how quickly they respond to a referee request (whether to agree or to decline)? 
+
+```{r echo=F}
+r.response_times <- r %>%
+  mutate(responded_at = if_else(!is.na(agreed_at), agreed_at, declined_at)) %>%
+  filter(!is.na(responded_at)) %>%
+  mutate(response_time = difftime(responded_at, created_at, units = c("days"))) %>%
+  select(gender, response_time)
+
+r.m.times <- r.response_times %>%
+  filter(gender == 'Male') %>%
+  .$response_time
+
+r.f.times <- r.response_times %>%
+  filter(gender == 'Female') %>%
+  .$response_time
+  
+result <- t.test(r.m.times, r.f.times)
+f.avg <- mean(r.f.times) %>% round(2)
+m.avg <- mean(r.m.times) %>% round(2)
+```
+
+The average response-time for women is `r f.avg` days, and for men it's `r m.avg` days. This difference is not statistically significant.[^3]
+
+[^3]: `r test.report(result, type = "t")`
+
+A boxplot likewise suggests that men and women have similar interquartile ranges:
+
+```{r echo=F}
+ggplot(r.response_times, aes(factor(gender), as.numeric(response_time))) +
+  geom_boxplot() +
+  xlab("Gender") +
+  ylab("Days to Respond")
+```
+
+
+# Completion-speed
+
+What about completion-speed: is there any difference in how long men and women take to complete their reports?
+
+```{r echo=F}
+r.completion_times <- r %>%
+  filter(!is.na(report_completed_at)) %>%
+  mutate(completion_time = difftime(report_completed_at, created_at, units = c("days"))) %>%
+  select(gender, completion_time)
+
+r.m.times <- r.completion_times %>%
+  filter(gender == 'Male') %>%
+  .$completion_time
+
+r.f.times <- r.completion_times %>%
+  filter(gender == 'Female') %>%
+  .$completion_time
+
+report <- t.test(r.m.times, r.f.times) %>% test.report(type = "t")
+f.avg <- mean(r.f.times) %>% round(1)
+m.avg <- mean(r.m.times) %>% round(1)
+```
+
+Women took `r f.avg` days on average, while men took `r m.avg` days. This difference is statistically significant.[^4]
+
+[^4]: `r report`
+
+Does that mean men are more likely to complete their reports on time? Not necessarily. Here's a frequency polygram showing when reports were completed:
+
+```{r echo=F}
+ggplot(r.completion_times %>% filter(!is.na(gender)), 
+       aes(as.numeric(completion_time), colour = gender)) +
+  geom_freqpoly(bins = 30) +
+  xlab("Day") + ylab("# Reports")
+```
+
+The spike at the four-week mark corresponds to the standard due date. We ask referees to submit their reports within 28 days of the initial request.
+
+It looks like men had a stronger tendency to complete their reports early. But were they more likely to complete them on time?
+
+One way to tackle this question is to look at how completed reports accumulate with time (the [empirical cumulative distribution](https://en.wikipedia.org/wiki/Empirical_distribution_function)):
+
+```{r echo=F}
+r.days_to_complete <- r %>%
+  filter(!is.na(report_completed_at)) %>%
+  mutate(days_to_complete = difftime(report_completed_at, created_at, units = c("days")))
+
+ggplot(r.days_to_complete, aes(as.numeric(days_to_complete), colour = gender)) + 
+  stat_ecdf() +
+  xlab("Days") + ylab("Proportion of Reports Completed (Cumulative)")
+```
+
+As expected, the plot shows that men completed their reports early with greater frequency. But it also looks like women and men converged around the four-week mark, when reports were due.
+
+```{r echo=F}
+result <- r.days_to_complete %>% 
+  mutate(on_time = if_else(days_to_complete < 29, "On Time", "Late"))  %>%
+  select(gender, on_time) %>%
+  table() %>%
+  .[ , c("On Time", "Late")]
+
+report <- chisq.test(result) %>% test.report(type = "chi.sq")
+```
+
+Another way of approaching the question is to classify reports as either "On Time" or "Late", according to whether they were completed before Day 29.
+
+```{r echo=F}
+kable(result, format = 'markdown')
+perc.frame(result) %>%
+  ggplot(aes(on_time, Freq, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("") +
+  ylab("Frequency (%)") + 
+  guides(fill = guide_legend(title = "Gender"))
+```
+
+A chi-square test of independence then finds no statistically significant difference.[^6]
+
+[^6]: `r report`.
+
+Apparently men and women differed in their tendency to be early, but not necessarily in their tendency to be on time.
+
+
+
+# Recommendations
+
+Did male and female referees differ in their recommendations to the editors? 
+
+*Ergo* offers referees four recommendations to choose from. The raw numbers:
+
+```{r echo=F}
+r.recs <- r %>%
+  filter(report_completed == 1) %>%
+  mutate(recommendation = if_else(
+    recommend_reject == 1, "Reject", if_else(
+      recommend_major_revisions == 1, "Major Revisions", if_else(
+        recommend_minor_revisions == 1, "Minor Revisions", if_else(
+          recommend_accept == 1, "Accept", "Reject")))))
+
+tbl <- r.recs %>% 
+  select(gender, recommendation) %>%
+  table() %>% 
+  .[, rec.levels]
+
+kable(tbl, format = 'markdown')
+```
+
+In terms of frequencies:
+
+```{r echo=F}
+perc.frame(tbl) %>%
+  ggplot(aes(recommendation, Freq, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Recommendation") +
+  ylab("Frequency (%)") + 
+  guides(fill = guide_legend(title = "Gender"))
+```
+
+The differences here are not statistically significant according to a chi-square test of independence.[^5]
+
+[^5]: `r chisq.test(tbl) %>% test.report(type = "chi.sq")`.
+
+
+# Influence
+
+Does a referee's gender affect whether the editor follows their recommendation? We can tackle this question a few different ways.
+
+One way is to just tally up those cases where the editor's decision was the same as the referee's recommendation, and those where it was different.
+
+```{r echo=F}
+s <- load_table("submissions") %>%
+  select(id, decision)
+
+tbl <- r.recs %>% 
+  left_join(s, by = c("submission_id" = "id")) %>%
+  select(submission_id, id, gender, recommendation, decision) %>%
+  mutate(followed = if_else(decision == recommendation, "Same", "Different")) %>%
+  select(gender, followed) %>%
+  table() %>%
+  .[, c("Same", "Different")]
+
+kable(tbl, format = 'markdown')
+
+perc.frame(tbl) %>%
+  ggplot(aes(followed, Freq, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Decision vs. Recommendation") +
+  ylab("Frequency (%)") + 
+  guides(fill = guide_legend(title = "Gender"))
+
+report <- chisq.test(tbl) %>% test.report(type = "chi.sq")
+```
+
+Clearly there's no statistically significant difference between male and female referees here.[^7]
+
+[^7]: `r report`.
+
+A second approach would be to assign numerical ranks to referees' recommendations and editors' decisions: Reject = 1, Major Revisions = 2, etc. Then we can consider how far the editor's decision is from the referee's recommendation. For example, a decision of Accept is 3 away from a recommendation of Reject, while a decision of Major Revisions is 2 away from a recommendation of Accept.
+
+```{r echo=F}
+dec.levels = c("Reject", "Major Revisions", "Minor Revisions", "Accept")
+
+r.facrecs <- r.recs %>%
+  mutate(rec.fac = factor(recommendation, levels = dec.levels, order = T))
+
+s <- load_table("submissions") %>%
+  mutate(dec.fac = factor(decision, levels = dec.levels, order = T)) %>%
+  select(id, dec.fac)
+
+df <- r.facrecs %>% 
+  left_join(s, by = c("submission_id" = "id")) %>%
+  mutate(diff = abs(as.numeric(dec.fac) - as.numeric(rec.fac))) %>%
+  filter(!is.na(diff))
+
+test <- t.test(df %>% filter(gender == "Female") %>% .$diff, 
+               df %>% filter(gender == "Male") %>% .$diff)
+```
+
+By this measure, the average distance between the referee's recommendation and the editor's decision was `r test$estimate[1] %>% round(2)` for women and `r test$estimate[2] %>% round(2)` for men---clearly not a statistically significant difference.[^8]
+
+[^8]: `r test %>% test.report(type = "t")`.
+
+
+# Summary
+
+Men received more requests to referee than women, as expected given the well known gender imbalance in academic philosophy. The distribution of requests between men (`r n.m.perc`%) and women (`r n.f.perc`%) was in line with some estimates of the gender makeup of academic philosophy, though not all estimates.
+
+Men were more likely to agree to a request (`r perc.m`% vs. `r perc.f`%), a statistically significant difference. Women accounted for about `r f.agreed.perc`% of the "Agreed" responses, however, consistent with most (but not all) estimates of the gender makeup of academic philosophy.
+
+There was no statistically significant difference in response-speed, but there was in the speed with which reports were completed (`r m.avg` days on average for men, `r f.avg` days for women). This difference appears to be due to a stronger tendency on the part of men to complete their reports early, though not necessarily a greater chance of meeting the deadline.
+
+Finally, there was no statistically significant difference in the recommendations of male and female referees, or in editors' uptake of those recommendations.
+
+
+```{r echo=F}
+# Editor Bias
+
+# Do male editors tend to invite male referees more than women do?
+
+# ae <- load_table("area_editor_assignments") %>%
+#   mutate(editor_id = user_id) %>%
+#   mutate(s_id = submission_id) %>%
+#   select(s_id, editor_id)
+# 
+# u.eds <- load_table("users") %>%
+#   mutate(editor_id = id) %>%
+#   mutate(editor_gender = gender) %>%
+#   select(editor_id, editor_gender)
+# 
+# u.refs <- load_table("users") %>%
+#   mutate(referee_id = id) %>%
+#   mutate(referee_gender = gender) %>%
+#   select(referee_id, referee_gender)
+# 
+# s <- load_table("submissions") %>%
+#   mutate(submission_id = id) %>%
+#   select(submission_id, area_id)
+# 
+# r.value <- r %>% 
+#   left_join(s, by = c("submission_id" = "submission_id")) %>%
+#   filter(area_id %in% c(3,19))
+# 
+# r.hist <- r %>%
+#   left_join(s, by = c("submission_id" = "submission_id")) %>%
+#   filter(area_id %in% c(5,6,7,8,21))
+# 
+# r.me <- r %>%
+#   left_join(s, by = c("submission_id" = "submission_id")) %>%
+#   filter(area_id %in% c(2,8,9,11,12,13,14,15,18,22))
+# 
+# r.rest <- r %>%
+#   left_join(s, by = c("submission_id" = "submission_id")) %>%
+#   filter(area_id %in% c(1,10,16,17,20))
+# 
+# foo <- bind_rows(r.value) %>%
+#   left_join(ae, by = c("submission_id" = "s_id")) %>%
+#   left_join(u.eds, by = c("editor_id" = "editor_id")) %>%
+#   left_join(u.refs, by = c("user_id" = "referee_id")) %>%
+#   select(submission_id, id, editor_gender, referee_gender)
+# 
+# foo %>%
+#   group_by(editor_gender) %>%
+#   summarize(avg = round(sum(referee_gender == "Female") / n(), 3))
+# 
+# table(foo$editor_gender, foo$referee_gender) %>% chisq.test
+```
+

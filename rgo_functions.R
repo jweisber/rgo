@@ -16,7 +16,11 @@ msq.test <- function(fac1, fac2) {
   1 - pchisq(M.sq, df = 1)
 }
 
-week.abb = c("Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat")
+week.abb <- c("Sun", "Mon", "Tue", "Wed", "Thur", "Fri", "Sat")
+rec.levels <- c("Reject", "Major Revisions", "Minor Revisions", "Accept")
+rec.levels.abbrv <- c("Reject", "Maj. Rev.", "Min. Rev.", "Accept")
+dec.levels <- rec.levels
+
 
 test.report <- function(test, type) {
   str <- NULL
@@ -27,5 +31,15 @@ test.report <- function(test, type) {
                ", *p* = ", round(test$p.value, 2),
                sep = "")
   }
+  else if (type == "t") {
+    str <- paste("*t*(", round(test$parameter, 2),
+                 ") = ", round(test$statistic, 2),
+                 ", *p* = ", round(test$p.value, 2),
+                 sep = "")
+  }
   return(str)
+}
+
+perc.frame <- function(tbl) {
+  (prop.table(t(tbl), 2) * 100) %>% as.data.frame()
 }
