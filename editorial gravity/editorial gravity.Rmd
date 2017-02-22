@@ -1,0 +1,148 @@
+---
+title: "Editorial Gravity"
+css: ../custom.css
+output:
+  html_document:
+    keep_md: true
+--- 
+  
+```{r include=FALSE}
+library(knitr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+source('../rgo_functions.R')
+```
+
+We've all been there. One referee is positive, the other negative, and the editor decides to reject the submission.
+
+I've heard it said that editors tend to be conservative given the recommendations of their referees. And that jibes with my experience as an author.
+
+So is there anything to it---is "editorial gravity" really a thing? And if it is, how strong is its pull? Is there some magic function editors use to compute their decision based on the referees' recommendations?
+
+In this post we'll consider how things shake out at [*Ergo*](http://www.ergophiljournal.org/).
+
+
+# Decision Rules
+
+*Ergo* doesn't have any rule about what an editor's decision should be given the referees' recommendations. In fact, we explicitly discourage our editors from relying on any such heuristic. Instead we encourage them to rely on their judgment about the submission's merits, informed by the substance of the referees' reports.
+
+Still, maybe there's some natural law of journal editing waiting to be discovered here, or some unwritten rule.
+
+Referees choose from four possible recommendations at *Ergo*: Reject, Major Revisions, Minor Revisions, or Accept. Let's consider four simple rules we might use to predict an editor's decision, given the recommendations of their referees.
+
+1. Max: the editor follows the recommendation of the most positive referee. (Ha!)
+2. Mean: the editor "splits the difference" between the referees' recommendations.
+    - Accept + Major Revisions → Minor Revisions, for example.
+    - When the difference is intermediate between possible decisions, we'll stipulate that this rule "rounds down". 
+        - Major Revisions + Minor Revisions → Major Revisions, for example.
+3. Min: the editor follows the recommendation of the most negative referee.
+4. Less-than-Min: the editor's decision is a step more negative than either of the referees'. 
+    - Major Revisions + Minor Revisions → Reject, for example.
+    - Except obviously that Reject + anything → Reject.
+
+Do any of these rules do a decent job of predicting editorial decisions? If so, which does best?
+
+
+# A Test
+
+Let's run the simplest test possible. We'll go through the externally reviewed submissions in *Ergo*'s database and see how often each rule makes the correct prediction.
+
+```{r echo=FALSE}
+s <- load_table("submissions") %>%
+  mutate(dec_rank = case_when(
+    .$decision == "Reject" ~ 1,
+    .$decision == "Major Revisions" ~ 2,
+    .$decision == "Minor Revisions" ~ 3,
+    .$decision == "Accept" ~ 4
+  ))
+round1 <- s %>% filter(revision_number == 0) %>% .$id
+
+r <- load_table("referee_assignments") %>%
+  filter(submission_id %in% round1) %>%
+  filter(report_completed == 1) %>%
+  mutate(rec_rank = 1 * recommend_reject + 2 * recommend_major_revisions + 
+                    3 * recommend_minor_revisions + 4 * recommend_accept)
+
+r <- r %>%
+  group_by(submission_id) %>%
+  mutate(min_rec = min(rec_rank)) %>%
+  mutate(max_rec = max(rec_rank)) %>%
+  mutate(mean_rec = mean(rec_rank)) %>%
+  mutate(ltm_rec = if_else(min(rec_rank) - 1 < 1, 1, min(rec_rank) - 1)) %>%
+  left_join(s, by = c("submission_id" = "id")) %>%
+  filter(!is.na(dec_rank)) %>%
+  select(submission_id, id, rec_rank, min_rec, max_rec, mean_rec, ltm_rec,                dec_rank) %>%
+  distinct(submission_id, .keep_all = T) %>%
+  ungroup() %>%
+  mutate(min_diff = abs(min_rec - dec_rank),
+         max_diff = abs(max_rec - dec_rank),
+         mean_diff = abs(mean_rec - dec_rank),
+         ltm_diff = abs(ltm_rec - dec_rank))
+
+n.max <- r %>% filter(max_rec == dec_rank) %>% nrow()
+n.mean <- r %>% filter(as.integer(mean_rec) == dec_rank) %>% nrow()
+n.min <- r %>% filter(min_rec == dec_rank) %>% nrow()
+n.ltm <- r %>% filter(ltm_rec == dec_rank) %>% nrow()
+
+rules <- c("Max", "Mean", "Min", "Less-than-Min")
+scores <- c(n.max, n.mean, n.min, n.ltm)
+perc.scores <- (100 * scores / nrow(r)) %>% round(0)
+perc.correct <- data.frame(rules, perc.scores)
+perc.min <- perc.correct %>% filter(rules == "Min") %>% .$perc.scores
+
+ggplot(perc.correct) +
+  geom_bar(aes(rules, perc.scores), stat = "identity") +
+  xlab("Rule") + ylab("% Correct Predictions")
+```
+
+Not only was Min the most accurate rule, its predictions were correct `r perc.min`% of the time! (The sample size here is `r nrow(r)` submissions, by the way.) Apparently, editorial gravity is a real thing, at least at *Ergo*.
+
+Of course, *Ergo* might be atypical here. It's a new journal, and online-only with no regular publication schedule. So there's some pressure to play it safe, and no incentive to accept papers in order to fill space.
+
+But let's suppose for a moment that *Ergo* is typical as far as editorial gravity goes. That raises some questions. Here are two.
+
+
+# Two Questions
+
+First question: can we improve on the Min rule? Is there a not-too-complicated heuristic that's even more accurate?
+
+Visualizing our data might help us spot any patterns. Typically there are two referees, so we can plot most submissions on a plane according to the referees' recommendations. Then we can colour them according to the editor's decision. Adding a little random jitter to make all the points visible:
+
+```{r echo=F}
+two.reports <- load_table("referee_assignments") %>%
+  filter(report_completed == 1) %>%
+  group_by(submission_id) %>%
+  filter(length(id) == 2) %>%
+  .$submission_id
+
+r <- load_table("referee_assignments") %>%
+  filter(submission_id %in% round1) %>%
+  filter(report_completed == 1) %>%
+  mutate(rec_rank = 1 * recommend_reject + 2 * recommend_major_revisions + 
+                    3 * recommend_minor_revisions + 4 * recommend_accept) %>%
+  group_by(submission_id) %>%
+  left_join(s, by = c("submission_id" = "id")) %>%
+  filter(!is.na(dec_rank)) %>%
+  filter(submission_id %in% two.reports) %>%
+  arrange(submission_id) %>% 
+  mutate(ref = if_else(row_number() == 1, "r1", "r2")) %>%
+  select(submission_id, ref, rec_rank, decision) %>%
+  spread(key = ref, value = rec_rank)
+
+r$decision <- factor(r$decision, levels = dec.levels)
+r$r1 <- factor(rec.levels.abbrv[r$r1], levels = rec.levels.abbrv)
+r$r2 <- factor(rec.levels.abbrv[r$r2], levels = rec.levels.abbrv)
+
+ggplot(r, aes(r1, r2, colour = decision)) + 
+  geom_jitter(width = .3, height = .3) +
+  xlab("Reviewer 1") + ylab("Reviewer 2") +
+  guides(colour = guide_legend(title = "Decision")) +
+  theme(axis.text.y = element_text(angle = 90, hjust = .5))
+```
+
+To my eye this looks a lot like the pattern of concentric-corners you'd expect from the Min rule. Though not exactly, especially when the two referees strongly disagree---the top-left and bottom-right corners of the plot. Still, other than treating cases of strong disagreement as a tossup, no simple way of improving on the Min rule jumps out at me.
+
+Second question: if editorial gravity is a thing, is it a good thing or a bad thing? 
+
+I'll leave that as an exercise for the reader.

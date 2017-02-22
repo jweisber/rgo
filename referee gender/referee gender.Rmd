@@ -21,7 +21,7 @@ Once again our discussion only covers men and women because we don't have the da
 
 [^1]: Unlike in the previous analysis of author gender, however, here we do have a few known cases where either (i) the referee identifies as neither male nor female, or (ii) they identify as something more specific, e.g. "transgender male" rather than just "male". But these cases are still too few for statistical analysis.
 
-Questions we'll consider:
+Using data from [*Ergo*](http://www.ergophiljournal.org/), we'll consider the following questions:
 
 1. *Requests*. How are requests to referee distributed between men and women? Are men more likely to be invited, for example?
 2. *Responses*. Does gender inform a referee's response to a request? Are women more likely to say 'yes', for example?
@@ -50,7 +50,7 @@ r <- r %>%
 n.r.included <- nrow(r)
 ```
 
-A quick overview of our data set: there are a total of `r n.r` referee-requests in the database. But only `r n.r.included` are included in this analysis. I've excluded:
+A quick overview of our data set: there are a total of `r n.r` referee-requests in *Ergo*'s database. But only `r n.r.included` are included in this analysis. I've excluded:
 
 1. Requests to review an invited resubmission, since these are a different sort of beast.
 2. Pending requests and reports, since the data for these are incomplete.
