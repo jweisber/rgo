@@ -48,7 +48,7 @@ Do any of these rules do a decent job of predicting editorial decisions? If so, 
 
 Let's run the simplest test possible. We'll go through the externally reviewed submissions in *Ergo*'s database and see how often each rule makes the correct prediction.
 
-```{r echo=FALSE}
+```{r echo=F, dpi=300}
 s <- load_table("submissions") %>%
   mutate(dec_rank = case_when(
     .$decision == "Reject" ~ 1,
@@ -73,26 +73,22 @@ r <- r %>%
   left_join(s, by = c("submission_id" = "id")) %>%
   filter(!is.na(dec_rank)) %>%
   select(submission_id, id, rec_rank, min_rec, max_rec, mean_rec, ltm_rec,                dec_rank) %>%
-  distinct(submission_id, .keep_all = T) %>%
-  ungroup() %>%
-  mutate(min_diff = abs(min_rec - dec_rank),
-         max_diff = abs(max_rec - dec_rank),
-         mean_diff = abs(mean_rec - dec_rank),
-         ltm_diff = abs(ltm_rec - dec_rank))
+  distinct(submission_id, .keep_all = T)
 
 n.max <- r %>% filter(max_rec == dec_rank) %>% nrow()
 n.mean <- r %>% filter(as.integer(mean_rec) == dec_rank) %>% nrow()
 n.min <- r %>% filter(min_rec == dec_rank) %>% nrow()
 n.ltm <- r %>% filter(ltm_rec == dec_rank) %>% nrow()
 
-rules <- c("Max", "Mean", "Min", "Less-than-Min")
-scores <- c(n.max, n.mean, n.min, n.ltm)
-perc.scores <- (100 * scores / nrow(r)) %>% round(0)
-perc.correct <- data.frame(rules, perc.scores)
-perc.min <- perc.correct %>% filter(rules == "Min") %>% .$perc.scores
+rules <- factor(c("Max", "Mean", "Min", "Less-than-Min"),
+                c("Max", "Mean", "Min", "Less-than-Min"),
+                ordered = T)
+scores <- (100 *  c(n.max, n.mean, n.min, n.ltm) / nrow(r)) %>% round(0)
+perc.correct <- data.frame(rules, scores)
+perc.min <- perc.correct %>% filter(rules == "Min") %>% .$scores
 
 ggplot(perc.correct) +
-  geom_bar(aes(rules, perc.scores), stat = "identity") +
+  geom_bar(aes(rules, scores), stat = "identity") +
   xlab("Rule") + ylab("% Correct Predictions")
 ```
 
@@ -109,7 +105,7 @@ First question: can we improve on the Min rule? Is there a not-too-complicated h
 
 Visualizing our data might help us spot any patterns. Typically there are two referees, so we can plot most submissions on a plane according to the referees' recommendations. Then we can colour them according to the editor's decision. Adding a little random jitter to make all the points visible:
 
-```{r echo=F}
+```{r echo=F, dpi=300}
 two.reports <- load_table("referee_assignments") %>%
   filter(report_completed == 1) %>%
   group_by(submission_id) %>%
