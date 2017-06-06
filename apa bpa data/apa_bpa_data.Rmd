@@ -1,0 +1,178 @@
+---
+title: "Journal Submission Rates by Gender: A Look at the APA/BPA Data"
+output:
+  html_document:
+    css: ../custom.css
+    keep_md: true
+---
+
+```{r echo=F, warning=F}
+library(dplyr, warn.conflicts = FALSE)
+library(ggplot2)
+library(readxl)
+library(knitr)
+```
+
+A [new paper](https://link.springer.com/article/10.1007/s11098-017-0919-0) on the representation of women in philosophy journals prompted some debate in the philosophy blogosphere last week. The paper found women to be underrepresented across a range of prominent journals, yet overrepresented in the two journals studied where review was non-anonymous.
+
+Commenters [over at Daily Nous](http://dailynous.com/2017/05/26/women-philosophy-journals-new-data/) complained about the lack of base-rate data. How many of the submissions to these journals were from women? In some respects, it's hard to know what to make of these findings withough such data.
+
+A few commenters linked to [a survey](http://www.apaonline.org/resource/resmgr/journal_surveys_2014/apa_bpa_survey_data_2014.xlsx) conducted by the APA and BPA a while back, which supplies some numbers along these lines. I was surprised, because I've wondered about these numbers, but I didn't recall seeing this data-set before. I was excited too because the data-set is huge, in a way: it covers more than 30,000 submissions at 40+ journals over a span of three years!
+
+So I was keen to give it a closer look. This post walks through that process. But I should warn you up front that the result is kinda disappointing.
+
+
+# Initial Reservations
+
+Right away some conspicuous omissions stand out.[^1] A good number of the usual suspects aren't included, like *Philosophical Studies*, *Analysis*, and *Australasian Journal of Philosophy*. So the usual worries about response rates and selection bias apply.
+
+[^1]: No, I don't mean *Ergo*! We published our first issue in 2014 while the survey covers mainly 2011--13.
+
+The data are also a bit haphazard and incomplete. Fewer than half of the journals that responded included gender data. And some of those numbers are suspiciously round.
+
+Still, there's hope. We have data on over ten thousands submissions even after we exclude journals that didn't submit any gender data. As long as they paint a reasonably consistent picture, we stand to learn a lot.
+
+
+# First Pass
+
+For starters we'll just do some minimal cleaning. We'll exclude data from 2014, since almost no journals supplied it. And we'll lump together the submissions from the remaining three years, 2011--13, since the gender data isn't broken down by year.
+
+We can then calculate the following cross-journal tallies for 2011--13:
+
+```{r echo=F}
+tbl <- read_excel("apa_bpa_survey_data_2014.xlsx")
+
+tbl <- tbl %>% 
+       select(`Name of journal`, 
+              `# submissions 2011`, `# submissions 2012`, `# submissions 2013`, 
+              `% accepted 2011`, `% accepted 2012`, `% accepted 2013`,
+              `anonymous to editor? y/n`, `% submissions women`, `% accepted women`) %>% 
+       na.omit() %>%
+       filter(!(`% submissions women` %in% c('n/a', 'Unknown', 'No data', 'stats not collected'))) %>%
+       mutate(submissions = as.numeric(`# submissions 2011`) +
+                            as.numeric(`# submissions 2012`) +
+                            as.numeric(`# submissions 2013`) ) %>%
+       mutate(accepted = as.integer(
+                           as.numeric(`% accepted 2011`) / 100 * as.numeric(`# submissions 2011`) +
+                           as.numeric(`% accepted 2012`) / 100 * as.numeric(`# submissions 2012`) +
+                           as.numeric(`% accepted 2013`) / 100 * as.numeric(`# submissions 2013`) )) %>%
+       mutate(w.sub.perc = as.numeric(`% submissions women`) / 100) %>%
+       mutate(w.acc.perc = as.numeric(`% accepted women`) / 100) %>%
+       mutate(m.sub.perc = 1 - w.sub.perc) %>%
+       mutate(m.acc.perc = 1 - w.acc.perc)
+
+s.women <- as.integer(tbl$w.sub.perc %*% tbl$submissions)
+s <- sum(tbl$submissions)
+
+a.women <- as.integer(tbl$w.acc.perc %*% tbl$accepted)
+a <- sum(tbl$accepted)
+
+m <- matrix(c(a - a.women, 
+              s - a - (s.women - a.women), 
+              a.women, 
+              s.women - a.women),
+            ncol = 2, byrow = T)
+dimnames(m) = list(c("Men", "Women"), c("Accepted submissions", "Rejected submissions"))
+kable(m, format = "markdown")
+```
+
+The difference here looks notable at first: `r (s.women/s * 100) %>% round(1)`% of submitted papers came from women compared with  `r (a.women/a * 100) %>% round(1)`% of accepted papers, a statistically significant difference (*p* = `r chisq.test(m)$p.value %>% round(3)`).
+
+But if we plot the data by journal, the picture becomes much less clear:
+
+```{r echo=F, dpi=300}
+tbl2 <- tbl %>% filter(!(`Name of journal` == "Hume Studies"))
+ggplot(tbl2, aes(w.sub.perc, w.acc.perc, size = submissions, label = `Name of journal`)) +
+  geom_point() +
+  geom_text(vjust = 1, nudge_y = 0.015, size = 3) + 
+  geom_abline(intercept = 0, slope = 1, colour = 'blue') +
+  xlab("% Submitted by Women") + ylab("% Accepted by Women") +
+  theme(legend.position = "bottom")
+```
+
+The blue line indicates parity: where submission and acceptance rate are equal. At journals above the blue line, women make up a larger portion of published authors than they do submitting authors. At journals below the line, it's the reverse.
+
+It's pretty striking how much variation there is between journals. For example, *BJPS* is 12 points above the line while *Phil Quarterly* is 9 points below it.
+
+It's also notable that it's the largest journals which diverge the most from parity: *BJPS*, *EJP*, *MIND*, and *Phil Quarterly*.
+
+It's hard to see all the details in the plot, so here's the same data in a table. (Note: *Hume Studies* was excluded from the plot because it's very small, and as an extreme outlier it badly skews the *y*-axis.)
+
+```{r echo=F}
+kable(tbl %>% select(`Name of journal`, `submissions`, `accepted`, `% submissions women`, `% accepted women`), format = "markdown")
+```
+
+
+# Rounders Removed
+
+I mentioned that some of the numbers look suspiciously round. Maybe 10% of submissions to *MIND* really were from women, compared with 5% of accepted papers. But some of these cases probably involve non-trivial rounding, maybe even eyeballing or guesstimating. So let's see how things look without them.
+
+```{r echo=F}
+tbl2 <- tbl %>% 
+         filter( !( as.numeric(`% submissions women`) %% 5 == 0 & as.numeric(`% accepted women`) %% 5 == 0 ) ) # filter round
+
+s.women <- as.integer(tbl2$w.sub.perc %*% tbl2$submissions)
+s <- sum(tbl2$submissions)
+
+a.women <- as.integer(tbl2$w.acc.perc %*% tbl2$accepted)
+a <- sum(tbl2$accepted)
+
+m <- matrix(c(a - a.women, 
+              s - a - (s.women - a.women), 
+              a.women, 
+              s.women - a.women),
+            ncol = 2, byrow = T)
+dimnames(m) = list(c("Men", "Women"), c("Accepted", "Rejected"))
+#kable(m)
+```
+
+If we omit journals where both percentages are round (integer multiples of 5), that leaves ten journals. And the gap from before is even more pronounced: `r (s.women/s * 100) %>% round(1)`% of submissions from women compared with  `r (a.women/a * 100) %>% round(1)`% of accepted papers (*p* = `r format(chisq.test(m)$p.value %>% round(7), scientific=F)`).
+
+But it's still a few, high-volume journals driving the result: *BJPS* and *EJP* do a ton of business, and each has a large gap. So much so that they're able to overcome the opposite contribution of *Phil Quarterly* (which does a mind-boggling amount of business!).
+
+
+# Editors Anonymous
+
+Naturally I fell to wondering how these big journals differ in their editorial practices. What are they doing differently that leads to such divergent results?
+
+One thing the data tell us is which journals practice fully anonymous review, with even the editors ignorant of the author's identity. That narrows it down to just three journals: *CJP*, *Dialectica*, and *Phil Quarterly*.[^2] The tallies then are:
+
+```{r echo=F}
+tbl3 <- tbl2 %>% filter( `anonymous to editor? y/n` == 'Yes') # filter 2-anon
+
+#kable(tbl3 %>% select(`Name of journal`, `submissions`, `accepted`, `% submissions women`, `% accepted women`))
+
+s.women <- as.integer(tbl3$w.sub.perc %*% tbl3$submissions)
+s <- sum(tbl3$submissions)
+
+a.women <- as.integer(tbl3$w.acc.perc %*% tbl3$accepted)
+a <- sum(tbl3$accepted)
+
+m <- matrix(c(a - a.women, 
+              s - a - (s.women - a.women), 
+              a.women, 
+              s.women - a.women),
+            ncol = 2, byrow = T)
+dimnames(m) = list(c("Men", "Women"), c("Accepted submissions", "Rejected submissions"))
+kable(m, format = "markdown")
+```
+
+And now the gap is gone: `r (s.women/s * 100) %>% round(1)`% of submissions from women, compared with `r (a.women/a * 100) %>% round(1)`% of accepted papers---not a statistically significant difference (*p* = `r chisq.test(m)$p.value %>% round(2)`). That makes it look like the gap is down to editors' decisions being influenced by knowledge of the author's gender (whether deliberately or unconsciously).
+
+But notice again, *Phil Quarterly* is still a huge part of this story. It's their high volume and unusually negative differential that compensates for the more modest, positive differentials at *CJP* and *Dialectica*. So I still want to know more about *Phil Quarterly*, and what might explain their unusually negative differential.
+
+[^2]: That's if we continue to exclude journals with very round numbers. Adding these journals back in doesn't change the following result, though.
+
+
+# A Gruesome Conclusion
+
+In the end, I don't see a clear lesson here. Before drawing any conclusions from the aggregated, cross-journal tallies, it seems we'd need to know more about the policies and practices of the journals driving them. Otherwise we're liable to be misled to a false generalization about a heterogeneous group.
+
+Some of that policy-and-practice information is probably publicly available; I haven't had a chance to look. And I bet a lot of it is available informally, if you just talk to the right people. So this data-set could still be informative on our base-rate question. But sadly, I don't think I'm currently in a position to make informative use of it.
+
+![](http://i.imgur.com/ojvPBaY.jpg)
+
+
+# Technical Note
+
+This post was written in R Markdown and the source is [available on GitHub](https://github.com/jweisber/rgo/blob/master/apa_bpa_data/apa_bpa_data.Rmd).
