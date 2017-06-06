@@ -15,7 +15,7 @@ library(knitr)
 
 A [new paper](https://link.springer.com/article/10.1007/s11098-017-0919-0) on the representation of women in philosophy journals prompted some debate in the philosophy blogosphere last week. The paper found women to be underrepresented across a range of prominent journals, yet overrepresented in the two journals studied where review was non-anonymous.
 
-Commenters [over at Daily Nous](http://dailynous.com/2017/05/26/women-philosophy-journals-new-data/) complained about the lack of base-rate data. How many of the submissions to these journals were from women? In some respects, it's hard to know what to make of these findings withough such data.
+Commenters [over at Daily Nous](http://dailynous.com/2017/05/26/women-philosophy-journals-new-data/) complained about the lack of base-rate data. How many of the submissions to these journals were from women? In some respects, it's hard to know what to make of these findings without such data.
 
 A few commenters linked to [a survey](http://www.apaonline.org/resource/resmgr/journal_surveys_2014/apa_bpa_survey_data_2014.xlsx) conducted by the APA and BPA a while back, which supplies some numbers along these lines. I was surprised, because I've wondered about these numbers, but I didn't recall seeing this data-set before. I was excited too because the data-set is huge, in a way: it covers more than 30,000 submissions at 40+ journals over a span of three years!
 
